@@ -236,7 +236,7 @@ void StandardInput()
 void BoundingBox()
 {
 #ifdef _OPENMP
-#pragma omp parallel for num_threads(8)
+#pragma omp parallel for num_threads(8) if(parallel)
 #endif
 	for(auto tet : mesh)
 	{
@@ -276,7 +276,7 @@ void voxelize()
 		sample_coord_z[i] = sample_coord_z[i - 1] + voxelsize;
 	}
 #ifdef _OPENMP
-#pragma omp parallel for num_threads(8) 
+#pragma omp parallel for num_threads(8) if(parallel)
 #endif
 	for(auto tet : mesh)
 	{
