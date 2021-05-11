@@ -7,10 +7,14 @@
 #include <vector>
 #include <cxxopts.hpp>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 using namespace Eigen;
 using namespace std;
 
-bool verbose_output = false;
+bool verbose_output = false, parallel = false;
 int resolution = 16;	
 float voxelsize = 100.0f;
 
@@ -21,12 +25,12 @@ vector<Eigen::Vector3f> vertex;
 vector<float> sample_coord_x, sample_coord_y, sample_coord_z;
 bool voxels[256][256][256] = {0};
 
-float min(float a, float b, float c, float d)
+inline float min(float a, float b, float c, float d)
 {
 	return min(min(min(a,b),c),d);
 }
 
-float max(float a, float b, float c, float d)
+inline float max(float a, float b, float c, float d)
 {
 	return max(max(max(a,b),c),d);
 }
@@ -231,6 +235,9 @@ void StandardInput()
 
 void BoundingBox()
 {
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(8)
+#endif
 	for(auto tet : mesh)
 	{
 		min_corner << min(tet.bound_min(0), min_corner(0)), min(tet.bound_min(1), min_corner(1)), min(tet.bound_min(2), min_corner(2));
@@ -268,8 +275,9 @@ void voxelize()
 		sample_coord_y[i] = sample_coord_y[i - 1] + voxelsize;
 		sample_coord_z[i] = sample_coord_z[i - 1] + voxelsize;
 	}
-
-	Vector3d one(1, 1, 1);
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(8) 
+#endif
 	for(auto tet : mesh)
 	{
 		Vector3f starting = tet.bound_min - min_corner;
@@ -345,10 +353,15 @@ int main(int argc, char** argv)
 
   auto result = options.parse(argc, argv);
   
-  if (result.count("help"))
+  if(result.count("help"))
   {
     cout << options.help({"", "Group"}) << endl;
     return 0;
+  }
+
+  if(result.count("parallel"))
+  {
+  	parallel = true;
   }
 
  	if(result.count("resolution"))

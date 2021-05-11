@@ -4,6 +4,8 @@ clean1:
 	rm -rf *.gch 
 main:  
 	g++ -std=c++11 -I . -O3 voxelize.cpp -o exe.out 
+omp:
+	g++ -std=c++11 -I . -O3 voxelize.cpp -o exe.out -fopenmp	
 debug: 
 	g++ -std=c++11 -I . -g voxelize.cpp -o exe.out -pg
 	gdb -q ./exe.out
