@@ -1,7 +1,6 @@
 #ifndef VOXELIZE_H
 #define VOXELIZE_H
 
-#include <Eigen/Dense>
 #define INF 99999999.0
 
 struct tetrahedra

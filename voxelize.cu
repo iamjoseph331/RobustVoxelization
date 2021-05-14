@@ -7,10 +7,14 @@
 #include <algorithm>
 #include <vector>
 #include <cxxopts.hpp>
+#include <cuda_profiler_api.h>
 
 #ifdef _OPENMP
 #include <omp.h>
 #endif
+
+#define BLOCK 512
+#define MAXLENGTH 256
 
 using namespace Eigen;
 using namespace std;
@@ -24,7 +28,14 @@ Vector3f min_corner, max_corner;
 vector<tetrahedra> mesh;
 vector<Eigen::Vector3f> vertex;
 vector<float> sample_coord_x, sample_coord_y, sample_coord_z;
-bool voxels[256][256][256] = {0};
+bool voxels[MAXLENGTH][MAXLENGTH][MAXLENGTH] = {0};
+int MAXSIZE = MAXLENGTH * MAXLENGTH * MAXLENGTH;
+
+__device__
+int GetIndex(int i, int j, int k)
+{
+	return (i * MAXLENGTH + j ) * MAXLENGTH + k;
+}
 
 inline float min(float a, float b, float c, float d)
 {
@@ -72,7 +83,7 @@ void ElementInput(const char *fname)
 	fin >> input_count >> poly_face >> type;
 	
 	assert(poly_face == 4 && type == 0);
-	mesh.resize(input_count);
+	mesh.resize(input_count + 1);
 
 	for(int i = 1; i <= input_count; ++i)
 	{
@@ -162,7 +173,7 @@ void MshInput(string fname = "")
 			if(s == nd)
 			{
 				fin >> input_count;
-				vertex.resize(input_count);
+				vertex.resize(input_count + 1);
 				for(int i = 1; i <= input_count; ++i)
 				{
 					fin >> id >> x_coord >> y_coord >> z_coord;
@@ -201,6 +212,7 @@ void MshInput(string fname = "")
 			}
 		}
 	}
+	return;
 }
 
 void NodesElementsInput(string fname)
@@ -248,6 +260,13 @@ void BoundingBox()
 	voxelsize = (max_corner - min_corner).maxCoeff() / resolution;
 }
 
+__device__
+float deter(Matrix3f M)
+{
+	return M(0,0) * (M(1,1)*M(2,2) - M(1,2)*M(2,1)) - M(0,1) * (M(1,0)*M(2,2) - M(1,2)*M(2,0)) + M(0,2) * (M(1,0)*M(2,1) - M(1,1)*M(2,0));
+}
+
+__device__
 bool Philipp(Vector3f A, Vector3f B, Vector3f C, Vector3f D, Vector3f P)
 {
 	Vector3f a = A - P, b = B - P, c = C - P, d = D - P;
@@ -257,9 +276,55 @@ bool Philipp(Vector3f A, Vector3f B, Vector3f C, Vector3f D, Vector3f P)
 	Dc << a, b, d;
 	Dd << a, b, c;
 
-	if((Da.determinant() * Dc.determinant() >= 0) && (Db.determinant() * Dd.determinant() >= 0) && (Da.determinant() * Db.determinant() <= 0))
+	if((deter(Da) * deter(Dc) >= 0) && (deter(Db) * deter(Dd) >= 0) && (deter(Da) * deter(Db) <= 0))
 		return true;
 	return false;
+}
+
+__device__
+int LocateVoxel(int reso, int tid)
+{
+	int yz = tid / reso;
+	int z = yz / reso;
+	int y = yz % reso;
+	int x = tid % reso;
+	return (z * MAXLENGTH + y) * MAXLENGTH + x;
+}
+
+__global__
+void MeshIterKernel(int mesh_size, int resolution, bool *vox_d, tetrahedra* mesh_d, float *sample_coord_x, float *sample_coord_y, float *sample_coord_z, float voxelsize)
+{
+	int tid = blockIdx.x * blockDim.x + threadIdx.x;
+	if(tid >= mesh_size)return;
+
+	Vector3f min_corner;
+	min_corner << sample_coord_x[0], sample_coord_y[0], sample_coord_z[0];
+	Vector3f start_sample = mesh_d[tid].bound_min - min_corner;
+	Vector3f end_sample = mesh_d[tid].bound_max - min_corner;
+	Vector3f st = start_sample / voxelsize;
+	Vector3f ed = end_sample / voxelsize;
+
+	if(tid == 0)
+	{
+		printf("Mesh_size: %d, Resolutoin: %d, Voxelsize: %f", mesh_size, resolution, voxelsize);
+	}
+	for(int i = int(st(0)); i <= ed(0); ++i)
+	{
+		for(int j = int(st(1)); j <= ed(1); ++j)
+		{
+			for(int k = int(st(2)); k <= ed(2); ++k)
+			{
+				if(vox_d[GetIndex(i,j,k)]) continue;
+				Vector3f p;
+				p << sample_coord_x[i], sample_coord_y[j], sample_coord_z[k];
+				if( Philipp(mesh_d[tid].a, mesh_d[tid].b, mesh_d[tid].c, mesh_d[tid].d, p) )
+				{
+					vox_d[GetIndex(i,j,k)] = 1;
+				}
+			}
+		}
+	}
+	return;
 }
 
 void voxelize()
@@ -277,33 +342,37 @@ void voxelize()
 		sample_coord_y[i] = sample_coord_y[i - 1] + voxelsize;
 		sample_coord_z[i] = sample_coord_z[i - 1] + voxelsize;
 	}
+
+	bool *vox_d;
+	tetrahedra* mesh_d;
+	float *sample_coord_x_d, *sample_coord_y_d, *sample_coord_z_d;
 	size_t mesh_size = mesh.size();
-	#ifdef _OPENMP
-	#pragma omp parallel for num_threads(8) if(parallel)
-	#endif
-	for(int i = 0; i < mesh_size; ++i)
-	{
-		Vector3f starting = mesh[i].bound_min - min_corner;
-		Vector3f ending = mesh[i].bound_max - min_corner;
-		Vector3f st = (starting / voxelsize);
-		Vector3f ed = (ending / voxelsize);
-		for(int i = int(st(0)); i <= ed(0); ++i)
-		{
-			for(int j = int(st(1)); j <= ed(1); ++j)
-			{
-				for(int k = int(st(2)); k <= ed(2); ++k)
-				{
-					if(voxels[i][j][k]) continue;
-					Vector3f p;
-					p << sample_coord_x[i], sample_coord_y[j], sample_coord_z[k];
-					if( Philipp(mesh[i].a, mesh[i].b, mesh[i].c, mesh[i].d, p) )
-					{
-						voxels[i][j][k] = 1;
-					}
-				}
-			}
-		}
-	}
+	size_t host_data_size = mesh_size * sizeof(tetrahedra);
+	size_t sample_coord_size = resolution * sizeof(float);
+
+	cudaMalloc((void**)&vox_d, MAXSIZE * sizeof(bool));
+	cudaMalloc((void**)&mesh_d, host_data_size);
+	cudaMalloc((void**)&sample_coord_x_d, sample_coord_size);
+	cudaMalloc((void**)&sample_coord_y_d, sample_coord_size);
+	cudaMalloc((void**)&sample_coord_z_d, sample_coord_size);
+
+	cudaMemcpy(mesh_d, &mesh[0], host_data_size, cudaMemcpyHostToDevice);
+	cudaMemcpy(sample_coord_x_d, &sample_coord_x[0], sample_coord_size, cudaMemcpyHostToDevice);
+	cudaMemcpy(sample_coord_y_d, &sample_coord_y[0], sample_coord_size, cudaMemcpyHostToDevice);
+	cudaMemcpy(sample_coord_z_d, &sample_coord_z[0], sample_coord_size, cudaMemcpyHostToDevice);
+
+	int grid = (mesh_size / BLOCK) + 1;
+
+	MeshIterKernel<<<grid,BLOCK>>>(mesh_size, resolution, vox_d, mesh_d, sample_coord_x_d, sample_coord_y_d, sample_coord_z_d, voxelsize);
+	cudaDeviceSynchronize();
+
+	cudaMemcpy(voxels, vox_d, MAXSIZE * sizeof(bool), cudaMemcpyDeviceToHost);
+
+	cudaFree(vox_d);
+	cudaFree(mesh_d);
+	cudaFree(sample_coord_x_d);
+	cudaFree(sample_coord_y_d);
+	cudaFree(sample_coord_z_d);
 }
 
 void VoxelOutput(string fname = "")
@@ -397,13 +466,15 @@ int main(int argc, char** argv)
 	else
 	{
 		MshInput();
+
 	}
 	min_corner << INF, INF, INF;
 	max_corner << -INF, -INF, -INF;
 	BoundingBox();
 
 	if(verbose_output)
-		cout << min_corner << endl  << endl << max_corner << endl;
+		cout << min_corner << endl << endl << max_corner << endl;
+
   voxelize();
 
   if(result.count("output"))
@@ -414,5 +485,9 @@ int main(int argc, char** argv)
   {
 		VoxelOutput();
   }
+	cudaError_t err = cudaGetLastError();  // add
+	if (err != cudaSuccess) std::cout << "CUDA error: " << cudaGetErrorString(err) << std::endl; // add
+	cudaProfilerStop();
+
 	return 0;
 }
