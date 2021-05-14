@@ -14,6 +14,7 @@
 #endif
 
 #define BLOCK 512
+#define MAXLENGTH 256
 
 using namespace Eigen;
 using namespace std;
@@ -27,13 +28,13 @@ Vector3f min_corner, max_corner;
 vector<tetrahedra> mesh;
 vector<Eigen::Vector3f> vertex;
 vector<float> sample_coord_x, sample_coord_y, sample_coord_z;
-bool voxels[256][256][256] = {0};
-int MAXSIZE = 256 * 256 * 256;
+bool voxels[MAXLENGTH][MAXLENGTH][MAXLENGTH] = {0};
+int MAXSIZE = MAXLENGTH * MAXLENGTH * MAXLENGTH;
 
 __device__
 int GetIndex(int i, int j, int k)
 {
-	return (i * 256 + j ) * 256 + k;
+	return (i * MAXLENGTH + j ) * MAXLENGTH + k;
 }
 
 inline float min(float a, float b, float c, float d)
@@ -82,7 +83,7 @@ void ElementInput(const char *fname)
 	fin >> input_count >> poly_face >> type;
 	
 	assert(poly_face == 4 && type == 0);
-	vertex.resize(input_count);
+	mesh.resize(input_count + 1);
 
 	for(int i = 1; i <= input_count; ++i)
 	{
@@ -97,7 +98,7 @@ void ElementInput(const char *fname)
 		t.bound_min << min(t.a(0), t.b(0), t.c(0), t.d(0)), min(t.a(1), t.b(1), t.c(1), t.d(1)), min(t.a(2), t.b(2), t.c(2), t.d(2));
 		t.bound_max << max(t.a(0), t.b(0), t.c(0), t.d(0)), max(t.a(1), t.b(1), t.c(1), t.d(1)), max(t.a(2), t.b(2), t.c(2), t.d(2));
 	
-		mesh.push_back(t);
+		mesh[i] = t;
 	}
 
 	if(verbose_output)
@@ -155,7 +156,7 @@ void MshInput(string fname = "")
 					t.bound_min << min(t.a(0), t.b(0), t.c(0), t.d(0)), min(t.a(1), t.b(1), t.c(1), t.d(1)), min(t.a(2), t.b(2), t.c(2), t.d(2));
 					t.bound_max << max(t.a(0), t.b(0), t.c(0), t.d(0)), max(t.a(1), t.b(1), t.c(1), t.d(1)), max(t.a(2), t.b(2), t.c(2), t.d(2));
 				
-					mesh.push_back(t);
+					mesh[i] = t;
 				}
 				if(verbose_output)
 					cout << "ElementCount: " << id << endl;
@@ -172,7 +173,7 @@ void MshInput(string fname = "")
 			if(s == nd)
 			{
 				fin >> input_count;
-				vertex.resize(input_count);
+				vertex.resize(input_count + 1);
 				for(int i = 1; i <= input_count; ++i)
 				{
 					fin >> id >> x_coord >> y_coord >> z_coord;
@@ -202,7 +203,7 @@ void MshInput(string fname = "")
 					t.bound_min << min(t.a(0), t.b(0), t.c(0), t.d(0)), min(t.a(1), t.b(1), t.c(1), t.d(1)), min(t.a(2), t.b(2), t.c(2), t.d(2));
 					t.bound_max << max(t.a(0), t.b(0), t.c(0), t.d(0)), max(t.a(1), t.b(1), t.c(1), t.d(1)), max(t.a(2), t.b(2), t.c(2), t.d(2));
 				
-					mesh.push_back(t);
+					mesh[i] = t;
 				}
 				if(verbose_output)
 					cout << "ElementCount: " << id << endl;
@@ -211,6 +212,7 @@ void MshInput(string fname = "")
 			}
 		}
 	}
+	return;
 }
 
 void NodesElementsInput(string fname)
@@ -279,33 +281,50 @@ bool Philipp(Vector3f A, Vector3f B, Vector3f C, Vector3f D, Vector3f P)
 	return false;
 }
 
+__device__
+int LocateVoxel(int reso, int tid)
+{
+	int yz = tid / reso;
+	int z = yz / reso;
+	int y = yz % reso;
+	int x = tid % reso;
+	return (z * MAXLENGTH + y) * MAXLENGTH + x;
+}
+
 __global__
-void MeshIterKernel(int sz, bool *vox_d, tetrahedra *device_data, float *sample_coord_x_d, float *sample_coord_y_d, float *sample_coord_z_d, int voxelsize)
+void MeshIterKernel(int mesh_size, int resolution, bool *vox_d, tetrahedra* mesh_d, float *sample_coord_x, float *sample_coord_y, float *sample_coord_z, float voxelsize)
 {
 	int tid = blockIdx.x * blockDim.x + threadIdx.x;
-	if(tid >= sz) return;
+	if(tid >= mesh_size)return;
+
 	Vector3f min_corner;
-	min_corner << sample_coord_x_d[0], sample_coord_y_d[0], sample_coord_z_d[0];
-	Vector3f starting = device_data[tid].bound_min - min_corner;
-	Vector3f ending = device_data[tid].bound_max - min_corner;
-	Vector3f st = (starting / voxelsize);
-	Vector3f ed = (ending / voxelsize);
-	for(int i = int(st(0)); i < ed(0); ++i)
+	min_corner << sample_coord_x[0], sample_coord_y[0], sample_coord_z[0];
+	Vector3f start_sample = mesh_d[tid].bound_min - min_corner;
+	Vector3f end_sample = mesh_d[tid].bound_max - min_corner;
+	Vector3f st = start_sample / voxelsize;
+	Vector3f ed = end_sample / voxelsize;
+
+	if(tid == 0)
 	{
-		for(int j = int(st(1)); j < ed(1); ++j)
+		printf("Mesh_size: %d, Resolutoin: %d, Voxelsize: %f", mesh_size, resolution, voxelsize);
+	}
+	for(int i = int(st(0)); i <= ed(0); ++i)
+	{
+		for(int j = int(st(1)); j <= ed(1); ++j)
 		{
-			for(int k = int(st(2)); k < ed(2); ++k)
+			for(int k = int(st(2)); k <= ed(2); ++k)
 			{
 				if(vox_d[GetIndex(i,j,k)]) continue;
 				Vector3f p;
-				p << sample_coord_x_d[i], sample_coord_y_d[j], sample_coord_z_d[k];
-				if( Philipp(device_data[tid].a, device_data[tid].b, device_data[tid].c, device_data[tid].d, p) )
+				p << sample_coord_x[i], sample_coord_y[j], sample_coord_z[k];
+				if( Philipp(mesh_d[tid].a, mesh_d[tid].b, mesh_d[tid].c, mesh_d[tid].d, p) )
 				{
 					vox_d[GetIndex(i,j,k)] = 1;
 				}
 			}
 		}
 	}
+	return;
 }
 
 void voxelize()
@@ -325,33 +344,32 @@ void voxelize()
 	}
 
 	bool *vox_d;
+	tetrahedra* mesh_d;
 	float *sample_coord_x_d, *sample_coord_y_d, *sample_coord_z_d;
-	tetrahedra* device_data;
 	size_t mesh_size = mesh.size();
 	size_t host_data_size = mesh_size * sizeof(tetrahedra);
 	size_t sample_coord_size = resolution * sizeof(float);
 
 	cudaMalloc((void**)&vox_d, MAXSIZE * sizeof(bool));
-	cudaMalloc((void**)&device_data, host_data_size);
+	cudaMalloc((void**)&mesh_d, host_data_size);
 	cudaMalloc((void**)&sample_coord_x_d, sample_coord_size);
 	cudaMalloc((void**)&sample_coord_y_d, sample_coord_size);
 	cudaMalloc((void**)&sample_coord_z_d, sample_coord_size);
 
-	cudaMemcpy(vox_d, voxels, MAXSIZE * sizeof(bool), cudaMemcpyHostToDevice);
-	cudaMemcpy(device_data, &mesh[0], host_data_size, cudaMemcpyHostToDevice);
+	cudaMemcpy(mesh_d, &mesh[0], host_data_size, cudaMemcpyHostToDevice);
 	cudaMemcpy(sample_coord_x_d, &sample_coord_x[0], sample_coord_size, cudaMemcpyHostToDevice);
 	cudaMemcpy(sample_coord_y_d, &sample_coord_y[0], sample_coord_size, cudaMemcpyHostToDevice);
 	cudaMemcpy(sample_coord_z_d, &sample_coord_z[0], sample_coord_size, cudaMemcpyHostToDevice);
 
 	int grid = (mesh_size / BLOCK) + 1;
 
-	MeshIterKernel<<<grid, BLOCK>>>(mesh_size, vox_d, device_data, sample_coord_x_d, sample_coord_y_d, sample_coord_z_d, voxelsize);
+	MeshIterKernel<<<grid,BLOCK>>>(mesh_size, resolution, vox_d, mesh_d, sample_coord_x_d, sample_coord_y_d, sample_coord_z_d, voxelsize);
 	cudaDeviceSynchronize();
-	
+
 	cudaMemcpy(voxels, vox_d, MAXSIZE * sizeof(bool), cudaMemcpyDeviceToHost);
 
 	cudaFree(vox_d);
-	cudaFree(device_data);
+	cudaFree(mesh_d);
 	cudaFree(sample_coord_x_d);
 	cudaFree(sample_coord_y_d);
 	cudaFree(sample_coord_z_d);
@@ -448,13 +466,15 @@ int main(int argc, char** argv)
 	else
 	{
 		MshInput();
+
 	}
 	min_corner << INF, INF, INF;
 	max_corner << -INF, -INF, -INF;
 	BoundingBox();
 
 	if(verbose_output)
-		cout << min_corner << endl  << endl << max_corner << endl;
+		cout << min_corner << endl << endl << max_corner << endl;
+
   voxelize();
 
   if(result.count("output"))

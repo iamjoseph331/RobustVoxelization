@@ -1,3 +1,4 @@
+#include <Eigen/Dense>
 #include "voxelize.h"
 
 #include <iostream>
@@ -286,11 +287,11 @@ void voxelize()
 		Vector3f ending = mesh[i].bound_max - min_corner;
 		Vector3f st = (starting / voxelsize);
 		Vector3f ed = (ending / voxelsize);
-		for(int i = int(st(0)); i < ed(0); ++i)
+		for(int i = int(st(0)); i <= ed(0); ++i)
 		{
-			for(int j = int(st(1)); j < ed(1); ++j)
+			for(int j = int(st(1)); j <= ed(1); ++j)
 			{
-				for(int k = int(st(2)); k < ed(2); ++k)
+				for(int k = int(st(2)); k <= ed(2); ++k)
 				{
 					if(voxels[i][j][k]) continue;
 					Vector3f p;
