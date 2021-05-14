@@ -71,7 +71,7 @@ void ElementInput(const char *fname)
 	fin >> input_count >> poly_face >> type;
 	
 	assert(poly_face == 4 && type == 0);
-	vertex.resize(input_count);
+	mesh.resize(input_count);
 
 	for(int i = 1; i <= input_count; ++i)
 	{
@@ -86,7 +86,7 @@ void ElementInput(const char *fname)
 		t.bound_min << min(t.a(0), t.b(0), t.c(0), t.d(0)), min(t.a(1), t.b(1), t.c(1), t.d(1)), min(t.a(2), t.b(2), t.c(2), t.d(2));
 		t.bound_max << max(t.a(0), t.b(0), t.c(0), t.d(0)), max(t.a(1), t.b(1), t.c(1), t.d(1)), max(t.a(2), t.b(2), t.c(2), t.d(2));
 	
-		mesh.push_back(t);
+		mesh[i] = t;
 	}
 
 	if(verbose_output)
@@ -144,7 +144,7 @@ void MshInput(string fname = "")
 					t.bound_min << min(t.a(0), t.b(0), t.c(0), t.d(0)), min(t.a(1), t.b(1), t.c(1), t.d(1)), min(t.a(2), t.b(2), t.c(2), t.d(2));
 					t.bound_max << max(t.a(0), t.b(0), t.c(0), t.d(0)), max(t.a(1), t.b(1), t.c(1), t.d(1)), max(t.a(2), t.b(2), t.c(2), t.d(2));
 				
-					mesh.push_back(t);
+					mesh[i] = t;
 				}
 				if(verbose_output)
 					cout << "ElementCount: " << id << endl;
@@ -191,7 +191,7 @@ void MshInput(string fname = "")
 					t.bound_min << min(t.a(0), t.b(0), t.c(0), t.d(0)), min(t.a(1), t.b(1), t.c(1), t.d(1)), min(t.a(2), t.b(2), t.c(2), t.d(2));
 					t.bound_max << max(t.a(0), t.b(0), t.c(0), t.d(0)), max(t.a(1), t.b(1), t.c(1), t.d(1)), max(t.a(2), t.b(2), t.c(2), t.d(2));
 				
-					mesh.push_back(t);
+					mesh[i] = t;
 				}
 				if(verbose_output)
 					cout << "ElementCount: " << id << endl;
