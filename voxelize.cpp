@@ -38,46 +38,40 @@ inline float max(float a, float b, float c, float d)
 
 void NodesInput(const char *fname)
 {
-	int input_count, id, polyface = 3, type1 = 0, type2 = 0;
-	float x_coord, y_coord, z_coord;
+	int input_count = 1, id = 1, polyface = 3, type1 = 0, type2 = 0;
+	double x_coord, y_coord, z_coord;
 
-	ifstream fin(fname);
-	fin >> input_count >> polyface >> type1 >> type2;
+	ifstream fin1(fname);
+	fin1 >> input_count >> polyface >> type1 >> type2;
 
-	assert(polyface == 3 && type1 == 0 && type2 == 0);
+	//assert(polyface == 3 && type1 == 0 && type2 == 0);
 	vertex.resize(input_count);
 
 	for(int i = 1; i <= input_count; ++i)
 	{
-		fin >> id >> x_coord >> y_coord >> z_coord;
-		assert(id == i);
+		fin1 >> id >> x_coord >> y_coord >> z_coord;
+		//assert(id == i);
 		vertex[i] << x_coord, y_coord, z_coord;
 	}
 
-	if(verbose_output)
-		cout << "NodeCount: " << id << endl;
-	string message;
-	fin.ignore();
-	getline(fin, message);
-	if(verbose_output)
-		cout << message << endl;
+	fin1.close();	
 }
 
 void ElementInput(const char *fname)
 {
-	int input_count, id;
+	int input_count = 1, id = 1;
 	int poly_face = 4, type = 0, id_A, id_B, id_C, id_D;
 	
 	ifstream fin(fname);
 	fin >> input_count >> poly_face >> type;
 	
-	assert(poly_face == 4 && type == 0);
+	//assert(poly_face == 4 && type == 0);
 	mesh.resize(input_count);
 
 	for(int i = 1; i <= input_count; ++i)
 	{
 		fin >> id >> id_A >> id_B >> id_C >> id_D;
-		assert(id == i);
+		//assert(id == i);
 		tetrahedra t;
 		t.a = vertex[id_A];
 		t.b = vertex[id_B];
@@ -97,6 +91,7 @@ void ElementInput(const char *fname)
 	getline(fin, message);
 	if(verbose_output)
 		cout << message << endl;
+	fin.close();
 }
 
 void MshInput(string fname = "")
@@ -119,14 +114,14 @@ void MshInput(string fname = "")
 				for(int i = 1; i <= input_count; ++i)
 				{
 					cin >> id >> x_coord >> y_coord >> z_coord;
-					assert(id == i);
+					//assert(id == i);
 					vertex[i] << x_coord, y_coord, z_coord;
 				}
 
 				if(verbose_output)
 					cout << "NodeCount: " << id << endl;
 				cin >> s;
-				assert(s == ednd);
+				//assert(s == ednd);
 			}
 			if(s == ele)
 			{
@@ -135,7 +130,7 @@ void MshInput(string fname = "")
 				for(int i = 1; i <= input_count; ++i)
 				{
 					cin >> id >> poly_face >> type >> id_A >> id_B >> id_C >> id_D;
-					assert(id == i && poly_face == 4 && type == 0);
+					//assert(id == i && poly_face == 4 && type == 0);
 					tetrahedra t;
 					t.a = vertex[id_A];
 					t.b = vertex[id_B];
@@ -150,7 +145,7 @@ void MshInput(string fname = "")
 				if(verbose_output)
 					cout << "ElementCount: " << id << endl;
 				cin >> s;
-				assert(s == edele);
+				//assert(s == edele);
 			}
 		}
 	}
@@ -166,14 +161,14 @@ void MshInput(string fname = "")
 				for(int i = 1; i <= input_count; ++i)
 				{
 					fin >> id >> x_coord >> y_coord >> z_coord;
-					assert(id == i);
+					//assert(id == i);
 					vertex[i] << x_coord, y_coord, z_coord;
 				}
 
 				if(verbose_output)
 					cout << "NodeCount: " << id << endl;
 				fin >> s;
-				assert(s == ednd);
+				//assert(s == ednd);
 			}
 			if(s == ele)
 			{
@@ -182,7 +177,7 @@ void MshInput(string fname = "")
 				for(int i = 1; i <= input_count; ++i)
 				{
 					fin >> id >> poly_face >> type >> id_A >> id_B >> id_C >> id_D;
-					assert(id == i && poly_face == 4 && type == 0);
+					//assert(id == i && poly_face == 4 && type == 0);
 					tetrahedra t;
 					t.a = vertex[id_A];
 					t.b = vertex[id_B];
@@ -197,16 +192,19 @@ void MshInput(string fname = "")
 				if(verbose_output)
 					cout << "ElementCount: " << id << endl;
 				fin >> s;
-				assert(s == edele);
+				//assert(s == edele);
 			}
 		}
+		fin.close();
 	}
 }
 
 void NodesElementsInput(string fname)
 {
+	//vertex.resize(300);
 	NodesInput((fname + ".node").c_str());
 	ElementInput((fname + ".ele").c_str());
+	//mesh.resize(792);
 }
 
 void StandardInput()
@@ -338,11 +336,15 @@ void VoxelOutput(string fname = "")
 			}
 		}
 		fout << endl;
+		fout.close();
 	}
 }
 
 int main(int argc, char** argv)
 {
+	vertex.reserve(1500000);
+	mesh.reserve(10000000);
+
 	cxxopts::Options options("exe.out", "One line description of MyProgram");
 	options.add_options()
 	("p,parallel", "Enable parallel computation on CUDA") // a bool parameter
