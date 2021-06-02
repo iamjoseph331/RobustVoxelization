@@ -45,7 +45,8 @@ void NodesInput(const char *fname)
 	fin1 >> input_count >> polyface >> type1 >> type2;
 
 	//assert(polyface == 3 && type1 == 0 && type2 == 0);
-	vertex.resize(input_count);
+	vertex.resize(input_count + 1);
+	vertex.shrink_to_fit();
 
 	for(int i = 1; i <= input_count; ++i)
 	{
@@ -66,7 +67,8 @@ void ElementInput(const char *fname)
 	fin >> input_count >> poly_face >> type;
 	
 	//assert(poly_face == 4 && type == 0);
-	mesh.resize(input_count);
+	mesh.resize(input_count + 1);
+	mesh.shrink_to_fit();
 
 	for(int i = 1; i <= input_count; ++i)
 	{
@@ -234,11 +236,11 @@ void StandardInput()
 
 void BoundingBox()
 {
-	size_t mesh_size = mesh.size();
+	int mesh_size = mesh.size();
 	#ifdef _OPENMP
 	#pragma omp parallel for num_threads(8) if(parallel)
 	#endif
-	for(int i = 0; i < mesh_size; ++i)
+	for(int i = 1; i < mesh_size; ++i)
 	{
 		min_corner << min(mesh[i].bound_min(0), min_corner(0)), min(mesh[i].bound_min(1), min_corner(1)), min(mesh[i].bound_min(2), min_corner(2));
 		max_corner << max(mesh[i].bound_max(0), max_corner(0)), max(mesh[i].bound_max(1), max_corner(1)), max(mesh[i].bound_max(2), max_corner(2));
@@ -275,11 +277,11 @@ void voxelize()
 		sample_coord_y[i] = sample_coord_y[i - 1] + voxelsize;
 		sample_coord_z[i] = sample_coord_z[i - 1] + voxelsize;
 	}
-	size_t mesh_size = mesh.size();
+	int mesh_size = mesh.size();
 	#ifdef _OPENMP
 	#pragma omp parallel for num_threads(8) if(parallel)
 	#endif
-	for(int i = 0; i < mesh_size; ++i)
+	for(int i = 1; i < mesh_size; ++i)
 	{
 		Vector3f starting = mesh[i].bound_min - min_corner;
 		Vector3f ending = mesh[i].bound_max - min_corner;

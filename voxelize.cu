@@ -56,7 +56,7 @@ void NodesInput(const char *fname)
 	fin >> input_count >> polyface >> type1 >> type2;
 
 	assert(polyface == 3 && type1 == 0 && type2 == 0);
-	vertex.resize(input_count);
+	vertex.resize(input_count + 1);
 
 	for(int i = 1; i <= input_count; ++i)
 	{
@@ -126,7 +126,7 @@ void MshInput(string fname = "")
 			if(s == nd)
 			{
 				cin >> input_count;
-				vertex.resize(input_count);
+				vertex.resize(input_count + 1);
 				for(int i = 1; i <= input_count; ++i)
 				{
 					cin >> id >> x_coord >> y_coord >> z_coord;
@@ -142,7 +142,7 @@ void MshInput(string fname = "")
 			if(s == ele)
 			{
 				cin >> input_count;
-				mesh.resize(input_count);
+				mesh.resize(input_count + 1);
 				for(int i = 1; i <= input_count; ++i)
 				{
 					cin >> id >> poly_face >> type >> id_A >> id_B >> id_C >> id_D;
@@ -189,7 +189,7 @@ void MshInput(string fname = "")
 			if(s == ele)
 			{
 				fin >> input_count;
-				mesh.resize(input_count);
+				mesh.resize(input_count + 1);
 				for(int i = 1; i <= input_count; ++i)
 				{
 					fin >> id >> poly_face >> type >> id_A >> id_B >> id_C >> id_D;
@@ -252,7 +252,7 @@ void BoundingBox()
 	#ifdef _OPENMP
 	#pragma omp parallel for num_threads(8) if(parallel)
 	#endif
-	for(int i = 0; i < mesh_size; ++i)
+	for(int i = 1; i < mesh_size; ++i)
 	{
 		min_corner << min(mesh[i].bound_min(0), min_corner(0)), min(mesh[i].bound_min(1), min_corner(1)), min(mesh[i].bound_min(2), min_corner(2));
 		max_corner << max(mesh[i].bound_max(0), max_corner(0)), max(mesh[i].bound_max(1), max_corner(1)), max(mesh[i].bound_max(2), max_corner(2));
@@ -307,6 +307,7 @@ void MeshIterKernel(int mesh_size, int resolution, bool *vox_d, tetrahedra* mesh
 	if(tid == 0)
 	{
 		printf("Mesh_size: %d, Resolutoin: %d, Voxelsize: %f", mesh_size, resolution, voxelsize);
+		return;
 	}
 	for(int i = int(st(0)); i <= ed(0); ++i)
 	{
